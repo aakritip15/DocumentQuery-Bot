@@ -1,0 +1,32 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+venv/ 
+
+# Environment variables
+.env
+.env.*
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+
+# Databases
+*.db
+*.sqlite3
+
+# Logs
+*.log
+
+# OS
+.DS_Store 
+
+# Project-specific
+documents/uploaded/
+*.db
+*.sqlite3
+chroma_db/
