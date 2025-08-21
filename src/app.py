@@ -1,155 +1,115 @@
 import streamlit as st
+import requests
 import os
-from dotenv import load_dotenv
+from typing import List
 import tempfile
-from chatbot.core.chatbot_engine import ChatbotEngine
 
-# import ChatbotEngine 
-
-# Load environment variables
-load_dotenv()
-
-# Page configuration
-st.set_page_config(
-    page_title="AI Document Chatbot",
-    page_icon="🤖",
-    layout="wide"
-)
-
-def initialize_chatbot():
-    """Initialize chatbot with API key."""
-    api_key = os.getenv("GOOGLE_API_KEY")
-    if not api_key:
-        st.error("Please set your GOOGLE_API_KEY in the .env file")
-        return None
-    
-    if 'chatbot' not in st.session_state:
-        st.session_state.chatbot = ChatbotEngine(api_key)
-        st.session_state.messages = []
-        st.session_state.documents_loaded = False
-    
-    return st.session_state.chatbot
-
-def handle_file_upload(chatbot, uploaded_files):
-    """Handle file uploads and process documents."""
-    if uploaded_files:
-        # Create temporary directory
-        temp_dir = tempfile.mkdtemp()
-        file_paths = []
-        
-        # Save uploaded files temporarily
-        for uploaded_file in uploaded_files:
-            temp_path = os.path.join(temp_dir, uploaded_file.name)
-            with open(temp_path, "wb") as f:
-                f.write(uploaded_file.getbuffer())
-            file_paths.append(temp_path)
-        
-        # Process documents
-        with st.spinner("Processing documents..."):
-            success = chatbot.load_documents(file_paths)
-            
-        # Clean up temporary files
-        for file_path in file_paths:
-            try:
-                os.remove(file_path)
-            except:
-                pass
-        os.rmdir(temp_dir)
-        
-        if success:
-            st.success("Documents processed successfully!")
-            st.session_state.documents_loaded = True
-            return True
-        else:
-            st.error("Failed to process documents. Please check the file formats.")
-            return False
-    return False
+# FastAPI backend URL
+BACKEND_URL = "http://localhost:8000/api/v1"
 
 def main():
-    st.title("🤖 AI Document Chatbot")
-    st.markdown("Upload documents and ask questions about them!")
+    st.set_page_config(
+        page_title="Document Q&A + Appointment Form",
+        page_icon="��",
+        layout="wide"
+    )
     
-    # Initialize chatbot
-    chatbot = initialize_chatbot()
-    if not chatbot:
-        return
+    st.title("📚 Document Q&A + Appointment Form")
     
-    # Sidebar for file upload
-    with st.sidebar:
-        st.header("📁 Upload Documents")
-        uploaded_files = st.file_uploader(
-            "Choose files",
-            accept_multiple_files=True,
-            type=['txt', 'pdf', 'docx'],
-            help="Upload PDF, DOCX, or TXT files"
-        )
-        
-        if st.button("Process Documents"):
-            if uploaded_files:
-                handle_file_upload(chatbot, uploaded_files)
-            else:
-                st.warning("Please select files to upload.")
-        
-        # Try to load existing vectorstore
-        if not st.session_state.documents_loaded:
-            if st.button("Load Existing Documents"):
-                with st.spinner("Loading existing documents..."):
-                    success = chatbot.load_existing_vectorstore()
-                    if success:
-                        st.success("Existing documents loaded!")
-                        st.session_state.documents_loaded = True
-                    else:
-                        st.info("No existing documents found.")
-        
-        # Show document status
-        if st.session_state.documents_loaded:
-            st.success("✅ Documents loaded")
-        else:
-            st.info("📤 Upload documents to start")
+    # Sidebar for navigation
+    page = st.sidebar.selectbox(
+        "Choose a page",
+        ["Document Q&A", "Book Appointment"]
+    )
     
-    # Chat interface
-    st.header("💬 Chat")
+    if page == "Document Q&A":
+        document_qa_page()
+    else:
+        appointment_page()
+
+def document_qa_page():
+    st.header("Document Q&A")
     
-    # Display chat messages
+    # File upload section
+    st.subheader("📁 Upload Documents")
+    uploaded_files = st.file_uploader(
+        "Choose files",
+        type=['pdf', 'docx', 'txt'],
+        accept_multiple_files=True,
+        help="Upload PDF, DOCX, or TXT files for RAG processing"
+    )
+    
+    if uploaded_files and st.button("🚀 Process Documents"):
+        with st.spinner("Processing documents..."):
+            try:
+                # Prepare files for upload
+                files_data = []
+                for file in uploaded_files:
+                    files_data.append(('files', (file.name, file.getvalue(), file.type)))
+                
+                # Upload to FastAPI backend
+                response = requests.post(
+                    f"{BACKEND_URL}/upload-documents",
+                    files=files_data
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    st.success(f"✅ {result['message']}")
+                    st.write("**Processed files:**", result['files'])
+                else:
+                    st.error(f"❌ Error: {response.json().get('detail', 'Unknown error')}")
+                    
+            except Exception as e:
+                st.error(f"❌ Error connecting to backend: {str(e)}")
+    
+    # Chat section
+    st.subheader("💬 Ask Questions")
+    
+    # Initialize chat history
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+    
+    # Display chat history
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
-            st.write(message["content"])
-            if "sources" in message and message["sources"]:
-                with st.expander("📚 Sources"):
-                    for i, source in enumerate(message["sources"]):
-                        st.write(f"**Source {i+1}:** {source['source']}")
-                        st.write(f"*{source['content']}*")
-                        st.divider()
+            st.markdown(message["content"])
     
     # Chat input
-    if prompt := st.chat_input("Ask me anything about your documents..."):
-        # Add user message
+    if prompt := st.chat_input("Ask a question about your documents..."):
+        # Add user message to chat history
         st.session_state.messages.append({"role": "user", "content": prompt})
-        
         with st.chat_message("user"):
-            st.write(prompt)
+            st.markdown(prompt)
         
-        # Get bot response
+        # Get response from FastAPI backend
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
-                response = chatbot.chat(prompt)
-                
-            st.write(response["response"])
-            
-            # Show sources if available
-            if response["sources"]:
-                with st.expander("📚 Sources"):
-                    for i, source in enumerate(response["sources"]):
-                        st.write(f"**Source {i+1}:** {source['source']}")
-                        st.write(f"*{source['content']}*")
-                        st.divider()
-            
-            # Add assistant response to messages
-            st.session_state.messages.append({
-                "role": "assistant", 
-                "content": response["response"],
-                "sources": response["sources"]
-            })
+                try:
+                    response = requests.post(
+                        f"{BACKEND_URL}/ask",
+                        data={"question": prompt}
+                    )
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        answer = result['answer']
+                        st.markdown(answer)
+                        st.session_state.messages.append({"role": "assistant", "content": answer})
+                    else:
+                        error_msg = response.json().get('detail', 'Unknown error')
+                        st.error(f"❌ Error: {error_msg}")
+                        
+                except Exception as e:
+                    error_msg = f"❌ Error connecting to backend: {str(e)}"
+                    st.error(error_msg)
+
+def appointment_page():
+    st.header("📅 Book Appointment")
+    st.info("This feature will be implemented in the next milestone!")
+    
+    # Placeholder for appointment form
+    st.write("Coming soon: Conversational appointment booking form with date parsing!")
 
 if __name__ == "__main__":
     main()

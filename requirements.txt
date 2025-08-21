@@ -13,4 +13,7 @@ pydantic
 python-dateutil 
 huggingface-hub 
 transformers 
-
+fastapi 
+uvicorn 
+python-multipart 
+python-dotenv 
