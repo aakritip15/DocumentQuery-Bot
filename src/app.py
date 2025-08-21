@@ -2,7 +2,7 @@ import streamlit as st
 import os
 from dotenv import load_dotenv
 import tempfile
-from chatbot.chatbot_engine import ChatbotEngine
+from chatbot.core.chatbot_engine import ChatbotEngine
 
 # import ChatbotEngine 
 

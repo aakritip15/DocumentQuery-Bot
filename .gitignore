@@ -8,6 +8,8 @@ venv/
 .env
 .env.*
 
+# Allow .env.example to be tracked by git
+!.env.example
 # IDEs
 .vscode/
 .idea/
