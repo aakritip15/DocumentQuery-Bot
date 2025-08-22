@@ -1,13 +1,13 @@
 import os
 from typing import List, Dict, Any, Optional
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.chains import RetrievalQA
+from langchain.chains import ConversationalRetrievalChain,RetrievalQA
 from langchain.prompts import PromptTemplate
 from langchain.schema import BaseRetriever
 from .document_processor import DocumentProcessor
 from ..form.conversational_form import ConversationalForm
 from ..agent.tool_agent import ToolAgent
-
+from langchain.memory import ConversationBufferMemory
 
 class ChatbotEngine:
     """Core chatbot engine for document-based Q&A."""
@@ -19,7 +19,11 @@ class ChatbotEngine:
             temperature=0.3,
             convert_system_message_to_human=True
         )
+        self.memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True, output_key="result")
+
+
         self.document_processor = DocumentProcessor()
+        # self.qa_chain: Optional[ConversationalRetrievalChain] = None
         self.qa_chain: Optional[RetrievalQA] = None
         self.conversation_state = "general"  # general, collecting_info, booking_appointment
         self.tools = ToolAgent()
@@ -50,9 +54,11 @@ class ChatbotEngine:
             2. If the user asks you to "call them", "contact them", or wants to "book an appointment", respond that you'd be happy to help and ask for their contact information (name, phone number, and email).
             3. Be conversational and helpful.
             4. If you cannot answer based on the context, say so politely.
+            5. However, if you can answer based on the history of the conversation, do so.
 
             Assistant: """,
-            input_variables=["context", "question"]
+            input_variables=["context", "question"],  
+
         )
     
     def load_uploaded_files(self, files: List[tuple]) -> bool:
@@ -72,12 +78,14 @@ class ChatbotEngine:
             vectorstore = self.document_processor.create_vectorstore(documents)
             
             # Create retrieval QA chain
+    
             self.qa_chain = RetrievalQA.from_chain_type(
                 llm=self.llm,
                 chain_type="stuff",
                 retriever=vectorstore.as_retriever(search_kwargs={"k": 4}),
                 return_source_documents=True,
-                chain_type_kwargs={"prompt": self.prompt_template}
+                chain_type_kwargs={"prompt": self.prompt_template},
+                memory = self.memory,
             )
             
             return True

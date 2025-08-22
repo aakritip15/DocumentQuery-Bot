@@ -15,3 +15,4 @@ transformers
 fastapi 
 sentence-transformers
 chromadb
+streamlit-calendar
