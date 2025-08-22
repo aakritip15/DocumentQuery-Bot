@@ -8,12 +8,10 @@ PyPDF2
 docx2txt 
 faiss-cpu
 uvicorn
-sentence-transformers 
 pydantic 
 python-dateutil 
 huggingface-hub 
 transformers 
 fastapi 
-uvicorn 
-python-multipart 
-python-dotenv 
+sentence-transformers
+chromadb

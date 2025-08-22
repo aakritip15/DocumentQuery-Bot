@@ -5,6 +5,8 @@ from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 from langchain.schema import BaseRetriever
 from .document_processor import DocumentProcessor
+from ..form.conversational_form import ConversationalForm
+from ..agent.tool_agent import ToolAgent
 
 
 class ChatbotEngine:
@@ -20,6 +22,9 @@ class ChatbotEngine:
         self.document_processor = DocumentProcessor()
         self.qa_chain: Optional[RetrievalQA] = None
         self.conversation_state = "general"  # general, collecting_info, booking_appointment
+        self.tools = ToolAgent()
+        self.form: ConversationalForm = ConversationalForm(tools=self.tools)
+        self.in_form: bool = False
         
         # Initialize conversation memory
         self.user_info = {
@@ -50,11 +55,15 @@ class ChatbotEngine:
             input_variables=["context", "question"]
         )
     
-    def load_documents(self, file_paths: List[str]) -> bool:
-        """Load and process documents for the chatbot."""
+    def load_uploaded_files(self, files: List[tuple]) -> bool:
+        """Load and process uploaded files for the chatbot.
+        
+        Args:
+            files: List of tuples containing (filename, file_content_bytes)
+        """
         try:
-            # Process documents
-            documents = self.document_processor.process_documents(file_paths)
+            # Process documents directly from file content
+            documents = self.document_processor.process_uploaded_files(files)
             
             if not documents:
                 return False
@@ -77,65 +86,105 @@ class ChatbotEngine:
             print(f"Error loading documents: {str(e)}")
             return False
     
-    def load_existing_vectorstore(self) -> bool:
-        """Load existing vector store if available."""
-        try:
-            vectorstore = self.document_processor.load_vectorstore()
-            if vectorstore:
-                self.qa_chain = RetrievalQA.from_chain_type(
-                    llm=self.llm,
-                    chain_type="stuff",
-                    retriever=vectorstore.as_retriever(search_kwargs={"k": 4}),
-                    return_source_documents=True,
-                    chain_type_kwargs={"prompt": self.prompt_template}
-                )
-                return True
-            return False
-        except Exception as e:
-            print(f"Error loading existing vectorstore: {str(e)}")
-            return False
-    
     def chat(self, message: str) -> Dict[str, Any]:
         """Process user message and return response."""
-        if not self.qa_chain:
+        # If we do not yet have a retriever and we are not in a form, ask to upload
+        if not self.qa_chain and not self.in_form:
             return {
                 "response": "Please upload some documents first so I can help answer your questions.",
                 "sources": [],
-                "needs_info": False
+                "needs_info": False,
             }
-        
-        # Check if user is asking for contact/appointment
-        contact_keywords = ["call me", "contact me", "book appointment", "schedule", "call", "reach out"]
+
+        # Detect contact/appointment intent
+        contact_keywords = [
+            "call me",
+            "contact me",
+            "book appointment",
+            "schedule",
+            "call",
+            "reach out",
+            "appointment",
+            "phone number",
+            "email me",
+        ]
         needs_contact = any(keyword in message.lower() for keyword in contact_keywords)
-        
+
+        # If already in form flow or intent detected, run form conversation instead of QA
+        if self.in_form or needs_contact:
+            form_started_now = False
+            if not self.in_form:
+                # Start the form flow
+                self.in_form = True
+                form_started_now = True
+                first_prompt = self.form.start()
+                return {
+                    "response": "I can help schedule that. I'll need a few details.",
+                    "sources": [],
+                    "needs_info": True,
+                    "form_prompt": first_prompt,
+                    "form_complete": False,
+                }
+
+            # We are in the middle of the form
+            reply, next_prompt = self.form.handle_input(message)
+            if self.form.is_complete():
+                data = self.form.get_data()
+                # Keep a copy in user_info
+                self.user_info.update({
+                    "name": data.get("name"),
+                    "phone": data.get("phone"),
+                    "email": data.get("email"),
+                })
+                # Auto-book via tool agent
+                confirmation_id = None
+                try:
+                    confirmation_id = self.tools.tool_book_appointment(data)
+                except Exception:
+                    confirmation_id = None
+                self.in_form = False
+                return {
+                    "response": (
+                        "Thanks! I have all the details and will proceed with booking." if not confirmation_id
+                        else f"Your appointment is booked. Confirmation: {confirmation_id}"
+                    ),
+                    "sources": [],
+                    "needs_info": False,
+                    "form_complete": True,
+                    "form_data": data,
+                }
+
+            return {
+                "response": reply,
+                "sources": [],
+                "needs_info": True,
+                "form_prompt": next_prompt,
+                "form_complete": False,
+            }
+
+        # Normal QA flow
         try:
-            # Get response from QA chain
             result = self.qa_chain({"query": message})
-            
             response = result["result"]
             sources = []
-            
-            # Extract source information
             if "source_documents" in result:
                 sources = [
                     {
                         "source": doc.metadata.get("source", "Unknown"),
-                        "content": doc.page_content[:200] + "..." if len(doc.page_content) > 200 else doc.page_content
+                        "content": doc.page_content[:200] + "..." if len(doc.page_content) > 200 else doc.page_content,
                     }
                     for doc in result["source_documents"]
                 ]
-            
             return {
                 "response": response,
                 "sources": sources,
-                "needs_info": needs_contact
+                "needs_info": False,
             }
-            
         except Exception as e:
             return {
                 "response": f"I encountered an error while processing your question: {str(e)}",
                 "sources": [],
-                "needs_info": False
+                "needs_info": False,
             }
     
     def get_conversation_state(self) -> str:

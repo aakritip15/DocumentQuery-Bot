@@ -1,13 +1,13 @@
 import os
-import tempfile
-from typing import List, Optional
+from typing import List, Optional, Union
 import PyPDF2
 import docx2txt
+from io import BytesIO
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.schema import Document
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from sentence_transformers import SentenceTransformer
+
 
 class DocumentProcessor:
     """Handles document loading, processing, and vector storage."""
@@ -17,9 +17,6 @@ class DocumentProcessor:
         self.embeddings = HuggingFaceEmbeddings(
             model_name="sentence-transformers/all-MiniLM-L6-v2", model_kwargs={"device": "cpu"}
         )
-        # self.embeddings = SentenceTransformer(
-        #     "sentence-transformers/all-MiniLM-L6-v2"
-        # )
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
             chunk_overlap=200,
@@ -27,39 +24,42 @@ class DocumentProcessor:
         )
         self.vectorstore: Optional[Chroma] = None
         
-    def load_text_from_file(self, file_path: str) -> str:
-        """Load text content from various file formats."""
-        _, ext = os.path.splitext(file_path.lower())
+    def process_file_content(self, file_content: bytes, filename: str) -> str:
+        """Process file content directly from bytes without saving to disk."""
+        _, ext = os.path.splitext(filename.lower())
         
         try:
             if ext == '.txt':
-                with open(file_path, 'r', encoding='utf-8') as file:
-                    return file.read()
+                return file_content.decode('utf-8')
             elif ext == '.pdf':
-                return self._extract_pdf_text(file_path)
+                return self._extract_pdf_text_from_bytes(file_content)
             elif ext == '.docx':
-                return docx2txt.process(file_path)
+                return docx2txt.process(BytesIO(file_content))
             else:
                 raise ValueError(f"Unsupported file format: {ext}")
         except Exception as e:
-            raise Exception(f"Error loading file {file_path}: {str(e)}")
+            raise Exception(f"Error processing file {filename}: {str(e)}")
     
-    def _extract_pdf_text(self, pdf_path: str) -> str:
-        """Extract text from PDF file."""
+    def _extract_pdf_text_from_bytes(self, pdf_content: bytes) -> str:
+        """Extract text from PDF content in bytes."""
         text = ""
-        with open(pdf_path, 'rb') as file:
-            pdf_reader = PyPDF2.PdfReader(file)
-            for page in pdf_reader.pages:
-                text += page.extract_text() + "\n"
+        pdf_file = BytesIO(pdf_content)
+        pdf_reader = PyPDF2.PdfReader(pdf_file)
+        for page in pdf_reader.pages:
+            text += page.extract_text() + "\n"
         return text
     
-    def process_documents(self, file_paths: List[str]) -> List[Document]:
-        """Process multiple documents and return list of Document objects."""
+    def process_uploaded_files(self, files: List[tuple]) -> List[Document]:
+        """Process multiple uploaded files and return list of Document objects.
+        
+        Args:
+            files: List of tuples containing (filename, file_content_bytes)
+        """
         documents = []
         
-        for file_path in file_paths:
+        for filename, file_content in files:
             try:
-                text = self.load_text_from_file(file_path)
+                text = self.process_file_content(file_content, filename)
                 # Create chunks from the text
                 chunks = self.text_splitter.split_text(text)
                 
@@ -68,15 +68,14 @@ class DocumentProcessor:
                     doc = Document(
                         page_content=chunk,
                         metadata={
-                            "source": os.path.basename(file_path),
-                            "chunk_id": i,
-                            "file_path": file_path
+                            "source": filename,
+                            "chunk_id": i
                         }
                     )
                     documents.append(doc)
                     
             except Exception as e:
-                print(f"Error processing {file_path}: {str(e)}")
+                print(f"Error processing {filename}: {str(e)}")
                 continue
         
         return documents
@@ -93,20 +92,6 @@ class DocumentProcessor:
         )
         
         return self.vectorstore
-    
-    def load_vectorstore(self) -> Optional[Chroma]:
-        """Load existing vector store if available."""
-        if os.path.exists(self.persist_directory):
-            try:
-                self.vectorstore = Chroma(
-                    persist_directory=self.persist_directory,
-                    embedding_function=self.embeddings
-                )
-                return self.vectorstore
-            except Exception as e:
-                print(f"Error loading vectorstore: {str(e)}")
-                return None
-        return None
     
     def get_vectorstore(self) -> Optional[Chroma]:
         """Get the current vectorstore instance."""

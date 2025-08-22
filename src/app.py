@@ -76,7 +76,7 @@ def document_qa_page():
             st.markdown(message["content"])
     
     # Chat input
-    if prompt := st.chat_input("Ask a question about your documents..."):
+    if prompt := st.chat_input("Ask a question about your documents or request a booking..."):
         # Add user message to chat history
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
@@ -96,6 +96,19 @@ def document_qa_page():
                         answer = result['answer']
                         st.markdown(answer)
                         st.session_state.messages.append({"role": "assistant", "content": answer})
+
+                        # If the assistant indicates it needs info, show form prompt
+                        if result.get("needs_info"):
+                            form_prompt = result.get("form_prompt")
+                            if form_prompt:
+                                st.info(form_prompt)
+                                st.session_state.messages.append({"role": "assistant", "content": form_prompt})
+
+                        # If form completed, display summary
+                        if result.get("form_complete"):
+                            data = result.get("form_data", {})
+                            st.success("Appointment details collected:")
+                            st.json(data)
                     else:
                         error_msg = response.json().get('detail', 'Unknown error')
                         st.error(f"❌ Error: {error_msg}")
@@ -104,12 +117,6 @@ def document_qa_page():
                     error_msg = f"❌ Error connecting to backend: {str(e)}"
                     st.error(error_msg)
 
-def appointment_page():
-    st.header("📅 Book Appointment")
-    st.info("This feature will be implemented in the next milestone!")
-    
-    # Placeholder for appointment form
-    st.write("Coming soon: Conversational appointment booking form with date parsing!")
 
 if __name__ == "__main__":
     main()

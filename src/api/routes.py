@@ -22,15 +22,6 @@ if not GOOGLE_API_KEY:
 document_processor = DocumentProcessor()
 chatbot_engine = ChatbotEngine(google_api_key=GOOGLE_API_KEY)
 
-# Try to load existing vectorstore on startup
-try:
-    if chatbot_engine.load_existing_vectorstore():
-        print("✅ Loaded existing vectorstore")
-    else:
-        print("ℹ️ No existing vectorstore found")
-except Exception as e:
-    print(f"⚠️ Warning: Could not load existing vectorstore: {e}")
-
 @router.get("/", response_model=schema.HealthResponse)
 async def root():
     """Root endpoint"""
@@ -44,7 +35,7 @@ async def upload_documents(files: List[UploadFile] = File(...)):
             raise HTTPException(status_code=400, detail="No files provided")
         
         uploaded_files = []
-        file_paths = []
+        file_data = []
         
         for file in files:
             if file.filename:
@@ -55,19 +46,13 @@ async def upload_documents(files: List[UploadFile] = File(...)):
                         detail=f"Unsupported file type: {file.filename}"
                     )
                 
-                # Save file temporarily and process
-                file_path = f"documents/{file.filename}"
-                os.makedirs("documents", exist_ok=True)
-                
-                with open(file_path, "wb") as buffer:
-                    content = await file.read()
-                    buffer.write(content)
-                
+                # Read file content into memory
+                content = await file.read()
+                file_data.append((file.filename, content))
                 uploaded_files.append(file.filename)
-                file_paths.append(file_path)
         
         # Process documents using ChatbotEngine (this creates vectorstore)
-        if chatbot_engine.load_documents(file_paths):
+        if chatbot_engine.load_uploaded_files(file_data):
             return {
                 "message": f"Successfully processed {len(uploaded_files)} documents and created vector database",
                 "files": uploaded_files
@@ -88,11 +73,22 @@ async def ask_question(question: str = Form(...)):
         # Get answer from chatbot engine
         result = chatbot_engine.chat(question)
         
-        return {
+        response_payload = {
             "question": question,
-            "answer": result["response"],
+            "answer": result.get("response", ""),
             "sources": [source["source"] for source in result.get("sources", [])]
         }
+        # Pass through optional form fields if present
+        if "needs_info" in result:
+            response_payload["needs_info"] = result["needs_info"]
+        if "form_prompt" in result and result["form_prompt"] is not None:
+            response_payload["form_prompt"] = result["form_prompt"]
+        if "form_complete" in result:
+            response_payload["form_complete"] = result["form_complete"]
+        if "form_data" in result and result["form_data"] is not None:
+            response_payload["form_data"] = result["form_data"]
+        
+        return response_payload
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing question: {str(e)}")
@@ -109,6 +105,5 @@ async def get_status():
     return {
         "has_documents": has_vectorstore,
         "vectorstore_loaded": has_vectorstore,
-        "documents_directory": "documents/",
         "chroma_db_directory": "./chroma_db"
     }
