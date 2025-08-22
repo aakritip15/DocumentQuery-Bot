@@ -117,6 +117,85 @@ def document_qa_page():
                     error_msg = f"❌ Error connecting to backend: {str(e)}"
                     st.error(error_msg)
 
+def appointment_page():
+    st.header("📅 Book Appointment")
+    st.subheader("Your Appointments")
+
+    # Try both possible locations
+    candidates = [
+        os.path.join(os.getcwd(), "appointments", "bookings.jsonl"),
+        os.path.join(os.getcwd(), "src", "appointments", "bookings.jsonl"),
+    ]
+
+    bookings_path = None
+    for p in candidates:
+        if os.path.exists(p):
+            bookings_path = p
+            break
+
+    if not bookings_path:
+        st.info("No bookings found yet.")
+        st.caption("Bookings will appear here after you complete the chat-based appointment form.")
+        return
+
+    # Load JSONL
+    records = []
+    try:
+        with open(bookings_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    import json
+                    rec = json.loads(line)
+                    records.append(rec)
+                except Exception:
+                    continue
+    except Exception as e:
+        st.error(f"Failed to read bookings: {e}")
+        return
+
+    if not records:
+        st.info("No bookings found in the file yet.")
+        return
+
+    # Simple filters
+    with st.expander("Filters", expanded=False):
+        name_filter = st.text_input("Filter by name contains")
+        email_filter = st.text_input("Filter by email contains")
+        date_filter = st.text_input("Filter by date (YYYY-MM-DD)")
+
+    def match(rec):
+        ok = True
+        if name_filter:
+            ok = ok and (name_filter.lower() in str(rec.get("name", "")).lower())
+        if email_filter:
+            ok = ok and (email_filter.lower() in str(rec.get("email", "")).lower())
+        if date_filter:
+            ok = ok and (date_filter in str(rec.get("preferred_datetime", "")))
+        return ok
+
+    filtered = [r for r in records if match(r)]
+
+    # Sort newest first by created_utc if available
+    try:
+        filtered.sort(key=lambda r: r.get("created_utc", ""), reverse=True)
+    except Exception:
+        pass
+
+    # Display
+    for rec in filtered:
+        with st.container(border=True):
+            st.write(f"**Confirmation**: {rec.get('id', 'N/A')}")
+            st.write(f"**Name**: {rec.get('name', '')}")
+            st.write(f"**Phone**: {rec.get('phone', '')}")
+            st.write(f"**Email**: {rec.get('email', '')}")
+            st.write(f"**Preferred**: {rec.get('preferred_datetime', '')}")
+            notes = rec.get('notes')
+            if notes:
+                st.write(f"**Notes**: {notes}")
+            st.caption(f"Created: {rec.get('created_utc', '')}")
 
 if __name__ == "__main__":
     main()
