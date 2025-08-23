@@ -21,7 +21,8 @@ if not GOOGLE_API_KEY:
 
 # Initialize components
 document_processor = DocumentProcessor()
-chatbot_engine = ChatbotEngine(google_api_key=GOOGLE_API_KEY)
+# Enable debug mode for development (set to False in production)
+chatbot_engine = ChatbotEngine(google_api_key=GOOGLE_API_KEY, debug=True)
 
 @router.get("/", response_model=schema.HealthResponse)
 async def root():
