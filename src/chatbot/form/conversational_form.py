@@ -126,8 +126,7 @@ class ConversationalForm:
             "phone": "What's the best phone number to reach you?",
             "email": "And your email address?",
             "preferred_datetime": (
-                "When would you prefer the appointment? You can say things like "
-                "'tomorrow 3pm' or 'next Monday morning'."
+                "When would you prefer the appointment?."
             ),
             "notes": "Any additional notes or preferences? (optional)",
         }
