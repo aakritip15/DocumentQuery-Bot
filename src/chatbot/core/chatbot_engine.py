@@ -70,15 +70,17 @@ class ChatbotEngine:
         try:
             # Process documents directly from file content
             documents = self.document_processor.process_uploaded_files(files)
+            print("a")
             
             if not documents:
                 return False
             
+            print("b")
             # Create vector store
             vectorstore = self.document_processor.create_vectorstore(documents)
             
             # Create retrieval QA chain
-    
+            print("c")
             self.qa_chain = RetrievalQA.from_chain_type(
                 llm=self.llm,
                 chain_type="stuff",
@@ -87,6 +89,7 @@ class ChatbotEngine:
                 chain_type_kwargs={"prompt": self.prompt_template},
                 memory = self.memory,
             )
+            print("d")
             
             return True
             
@@ -173,6 +176,18 @@ class ChatbotEngine:
         if self.debug:
             print(f"🎯 Detected intent: {intent}")
             print(f"📝 Current form state: in_form={self.in_form}")
+         
+        
+        # If intent is appointment/contact and we're not in form, reset form to give fresh start
+        if intent in ["appointment", "contact"] and not self.in_form:
+            if self.debug:
+                print(f"🔄 Resetting form for new appointment request")
+            self.form.reset()
+            self.user_info = {
+                "name": None,
+                "phone": None,
+                "email": None
+            }
         
         # If already in form flow or intent detected, run form conversation instead of QA
         if self.in_form or intent in ["appointment", "contact"]:

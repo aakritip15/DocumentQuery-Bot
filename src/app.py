@@ -119,7 +119,6 @@ def document_qa_page():
                         if result.get("form_complete"):
                             data = result.get("form_data", {})
                             st.success("Appointment details collected:")
-                            st.json(data)
                     else:
                         error_msg = response.json().get('detail', 'Unknown error')
                         st.error(f"❌ Error: {error_msg}")

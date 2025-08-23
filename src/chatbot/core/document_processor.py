@@ -7,7 +7,8 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.schema import Document
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
-
+import shutil
+import gc
 
 class DocumentProcessor:
     """Handles document loading, processing, and vector storage."""
@@ -81,17 +82,19 @@ class DocumentProcessor:
         return documents
     
     def create_vectorstore(self, documents: List[Document]) -> Chroma:
-        """Create and persist vector store from documents."""
+        """Create and persist a fresh vector store from documents (deletes old DB)."""
         if not documents:
             raise ValueError("No documents provided to create vectorstore")
-            
+
+    
+
         self.vectorstore = Chroma.from_documents(
             documents=documents,
             embedding=self.embeddings,
             persist_directory=self.persist_directory
         )
-        
         return self.vectorstore
+
     
     def get_vectorstore(self) -> Optional[Chroma]:
         """Get the current vectorstore instance."""
