@@ -47,6 +47,7 @@ class ChatbotEngine:
             Context from documents:
             {context}
 
+
             Human: {question}
 
             Instructions:
@@ -57,8 +58,7 @@ class ChatbotEngine:
             5. However, if you can answer based on the history of the conversation, do so.
 
             Assistant: """,
-            input_variables=["context", "question"],  
-
+            input_variables=["context", "question"],  # <-- ensure all variables are listed
         )
     
     def load_uploaded_files(self, files: List[tuple]) -> bool:
@@ -94,8 +94,8 @@ class ChatbotEngine:
             print(f"Error loading documents: {str(e)}")
             return False
     
-    def chat(self, message: str) -> Dict[str, Any]:
-        """Process user message and return response."""
+    def chat(self, message: str, history: Optional[list] = None) -> Dict[str, Any]:
+        """Process user message and return response. Optionally use chat history."""
         # If we do not yet have a retriever and we are not in a form, ask to upload
         if not self.qa_chain and not self.in_form:
             return {
@@ -172,7 +172,21 @@ class ChatbotEngine:
 
         # Normal QA flow
         try:
-            result = self.qa_chain({"query": message})
+            # Format history for prompt
+            history_text = ""
+            if history:
+                history_text = "\n".join(
+                    f"{h['role'].capitalize()}: {h['content']}" for h in history if 'role' in h and 'content' in h
+                )
+        
+
+            enhanced_query = message
+            if history_text:
+                enhanced_query = f"Context from previous conversation: {history_text}\n\nCurrent question: {message}"
+
+            result = self.qa_chain.invoke({
+                "query": enhanced_query,
+            })
             response = result["result"]
             sources = []
             if "source_documents" in result:

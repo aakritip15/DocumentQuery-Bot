@@ -1,7 +1,8 @@
 from fastapi import APIRouter, File, UploadFile, HTTPException, Form
 from fastapi.responses import JSONResponse
-from typing import List
+from typing import List, Optional
 import os
+import json
 from dotenv import load_dotenv
 
 from chatbot.core.document_processor import DocumentProcessor
@@ -64,14 +65,27 @@ async def upload_documents(files: List[UploadFile] = File(...)):
         raise HTTPException(status_code=500, detail=f"Error processing documents: {str(e)}")
 
 @router.post("/ask", response_model=schema.QuestionResponse)
-async def ask_question(question: str = Form(...)):
-    """Ask a question and get RAG-based answer"""
+async def ask_question(
+    question: str = Form(...),
+    history: Optional[str] = Form(None)
+):
+    """Ask a question and get RAG-based answer, with optional chat history"""
     try:
         if not question.strip():
             raise HTTPException(status_code=400, detail="Question cannot be empty")
         
-        # Get answer from chatbot engine
-        result = chatbot_engine.chat(question)
+        # Parse history if provided
+        history_list = []
+        if history:
+            try:
+                history_list = json.loads(history)
+                if not isinstance(history_list, list):
+                    raise ValueError("History must be a list")
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Invalid history format: {str(e)}")
+        
+        # Get answer from chatbot engine, passing history
+        result = chatbot_engine.chat(question, history=history_list)
         
         response_payload = {
             "question": question,
