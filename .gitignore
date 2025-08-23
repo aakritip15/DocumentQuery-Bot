@@ -32,3 +32,4 @@ documents/uploaded/
 *.db
 *.sqlite3
 chroma_db/
+appointments/
